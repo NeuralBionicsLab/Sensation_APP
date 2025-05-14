@@ -3,10 +3,10 @@ print("Script started")
 from PyQt5.QtWidgets import (QApplication, QLabel, QWidget, QPushButton,
                              QVBoxLayout, QHBoxLayout, QSlider, QTextEdit, QFileDialog,
                              QGridLayout, QGroupBox, QFrame, QSizePolicy, QCheckBox,
-                             QScrollArea, QDoubleSpinBox, QFormLayout, QWidgetItem)
+                             QScrollArea, QDoubleSpinBox, QFormLayout, QMessageBox)
 print("PyQt5.QtWidgets modules imported")
 from PyQt5.QtCore import Qt, QRect, QPoint
-from PyQt5.QtGui import QPixmap, QPainter, QColor, QFont, QPen, QPainterPath
+from PyQt5.QtGui import QPixmap, QPainter, QColor, QFont, QPen, QPainterPath, QIcon
 print("Other PyQt5 modules imported")
 import csv
 import os
@@ -156,9 +156,13 @@ class ImageLabelWithClick(QLabel):
 class SensationApp(QWidget):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Sensation Cataloger")
-        self.setGeometry(100, 100, 1000, 700)
-        self.setMinimumSize(800, 600)
+        self.setWindowTitle("Sensory NBLab")
+    
+        # Set the application icon
+        app_icon = QIcon("Icon/Icon.png")
+        self.setWindowIcon(app_icon)
+        
+        self.setWindowState(Qt.WindowMaximized)  # Make window maximized
         
         # Initialize variables
         self.click_position = (None, None)
@@ -168,6 +172,8 @@ class SensationApp(QWidget):
         self.selected_area = []  # Stores the points of the selected area
         self.sensation_checkboxes = {}  # Store references to checkboxes
         self.hand_mask = None  # Will store the binary mask image
+        self.last_intersection_mask = []
+
         
         # Parameters from selection screen (default values)
         self.hand_side = "right"  # Default to right hand
@@ -177,7 +183,9 @@ class SensationApp(QWidget):
             "current": None,
             "frequency": 50,
             "pulse_width": 200,
-            "interphase": 100
+            "interphase": 100,
+            "sensory_threshold": 1,
+            "motor_threshold": 10
         }
         self.stimulation_types = {
             "median_nerve": False,
@@ -276,20 +284,23 @@ class SensationApp(QWidget):
         
         if self.modulation_type == "amplitude":
             self.modulation_input.setRange(0.1, 50.0)
-            self.modulation_input.setSingleStep(0.1)
+            self.modulation_input.setSingleStep(0.10)
             self.modulation_input.setValue(1.0)
             self.modulation_input.setSuffix(" mA")
+            self.modulation_input.setDecimals(2)  # 2 decimal places for current
         elif self.modulation_type == "pulse_width":
             self.modulation_input.setRange(1, 5000)
-            self.modulation_input.setSingleStep(10)
+            self.modulation_input.setSingleStep(1)  # Changed from 10 to 1
             self.modulation_input.setValue(200)
             self.modulation_input.setSuffix(" μs")
+            self.modulation_input.setDecimals(0)  # No decimals for pulse width
         else:  # frequency
             self.modulation_input.setRange(1, 1000)
             self.modulation_input.setSingleStep(1)
             self.modulation_input.setValue(50)
             self.modulation_input.setSuffix(" Hz")
-        
+            self.modulation_input.setDecimals(0)  # No decimals for frequency
+                
         # Call updateParameterDisplay to set up the parameter layout
         self.updateParameterDisplay()
         
@@ -629,22 +640,22 @@ class SensationApp(QWidget):
         self.modulation_input = QDoubleSpinBox()
         self.modulation_input.setMinimumHeight(30)
         
-        # Configure the input based on modulation type
+        # In updateParameterDisplay method:
         if self.modulation_type == "amplitude":
             self.modulation_input.setRange(0.1, 50.0)
-            self.modulation_input.setSingleStep(0.1)
-            self.modulation_input.setValue(1.0)
+            self.modulation_input.setSingleStep(0.10)
             self.modulation_input.setSuffix(" mA")
+            self.modulation_input.setDecimals(2)  # 2 decimal places for current
         elif self.modulation_type == "pulse_width":
             self.modulation_input.setRange(1, 5000)
-            self.modulation_input.setSingleStep(10)
-            self.modulation_input.setValue(200)
+            self.modulation_input.setSingleStep(1)  # Changed from 10 to 1
             self.modulation_input.setSuffix(" μs")
+            self.modulation_input.setDecimals(0)  # No decimals for pulse width
         else:  # frequency
             self.modulation_input.setRange(1, 1000)
             self.modulation_input.setSingleStep(1)
-            self.modulation_input.setValue(50)
             self.modulation_input.setSuffix(" Hz")
+            self.modulation_input.setDecimals(0)  # No decimals for frequency
         
         # Add modulation type label
         mod_type_text = "Current"
@@ -704,16 +715,27 @@ class SensationApp(QWidget):
         if self.selected_area:
             self.selected_area = []
             self.click_position = (None, None)
+            self.last_intersection_mask = []
             self.displayImage()
             print("Selection cleared")
 
     def returnToSelection(self):
         """Return to the selection screen"""
+        if hasattr(self, 'reports') and len(self.reports) > 0:
+            reply = QMessageBox.question(self, 'Warning', 
+                                        'All reports saved so far will be deleted. Do you want to continue?',
+                                        QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+            if reply == QMessageBox.No:
+                # User chose to cancel
+                return
         # Hide the main window
         self.hide()
+        self.last_intersection_mask = []
+        self.reports = {}
         # Show the selection screen again (this is done through the main script)
         if hasattr(self, 'selection_screen'):
             self.selection_screen.show()
+
     
     def updateFromSelectionScreen(self, data):
         """Update the interface based on parameters from the selection screen"""
@@ -746,8 +768,9 @@ class SensationApp(QWidget):
         # Update the modulation parameter input and set correct value based on modulation type
         if self.modulation_type == "amplitude":
             self.modulation_input.setRange(0.1, 20.0)
-            self.modulation_input.setSingleStep(0.1)
+            self.modulation_input.setSingleStep(0.10)
             self.modulation_input.setSuffix(" mA")
+            self.modulation_input.setDecimals(2)  # 2 decimal places for current
             # Default value is 1.0 but only set if we don't have a current parameter
             if self.fixed_parameters["current"] is None:
                 self.modulation_input.setValue(1.0)
@@ -756,8 +779,9 @@ class SensationApp(QWidget):
                 self.modulation_input.setValue(float(self.fixed_parameters["current"]))
         elif self.modulation_type == "pulse_width":
             self.modulation_input.setRange(1, 1000)
-            self.modulation_input.setSingleStep(10)
+            self.modulation_input.setSingleStep(1)  # Changed from 10 to 1
             self.modulation_input.setSuffix(" μs")
+            self.modulation_input.setDecimals(0)  # No decimals for pulse width
             # Default value is 200 but only set if we don't have a pulse width parameter
             if self.fixed_parameters["pulse_width"] is None:
                 self.modulation_input.setValue(200)
@@ -768,6 +792,7 @@ class SensationApp(QWidget):
             self.modulation_input.setRange(1, 1000)
             self.modulation_input.setSingleStep(1)
             self.modulation_input.setSuffix(" Hz")
+            self.modulation_input.setDecimals(0)  # No decimals for frequency
             # Default value is 50 but only set if we don't have a frequency parameter
             if self.fixed_parameters["frequency"] is None:
                 self.modulation_input.setValue(50)
@@ -792,17 +817,9 @@ class SensationApp(QWidget):
             if self.hand_mask is None:
                 print(f"Error: Could not load hand mask from {mask_path}")
                 from PyQt5.QtWidgets import QMessageBox
-                QMessageBox.warning(self, "Warning", f"Non è possibile caricare la maschera della mano da {mask_path}")
+                QMessageBox.warning(self, "Warning", f"Unable to load hand mask from {mask_path}")
             else:
                 print(f"Hand mask loaded from {mask_path}")
-                
-                # We know for sure that black (0) represents the hand area
-                # and white (255) represents the background
-                black_pixels = np.sum(self.hand_mask < 50)  # Count very dark pixels (hand)
-                white_pixels = np.sum(self.hand_mask > 200)  # Count very light pixels (background)
-                print(f"Hand area pixels (black): {black_pixels}, Background pixels (white): {white_pixels}")
-                
-                # No need to invert the mask as we know the correct format
                 
                 # Save mask for debugging if needed
                 # debug_path = os.path.join('PIC', self.hand_side.capitalize(), 'debug_mask.jpg')
@@ -810,7 +827,7 @@ class SensationApp(QWidget):
         except Exception as e:
             print(f"Exception loading hand mask: {e}")
             from PyQt5.QtWidgets import QMessageBox
-            QMessageBox.warning(self, "Warning", f"Errore nel caricamento della maschera: {e}")
+            QMessageBox.warning(self, "Warning", f"Error loading the mask: {e}")
             self.hand_mask = None 
 
 
@@ -842,15 +859,18 @@ class SensationApp(QWidget):
             # User cancelled
             return
         
+        # Debug: Print the reports before saving
+        print(f"Reports before saving: {list(self.reports.keys())}")
+        
         # Create the MATLAB struct for main data
-        data = {}
+        matlab_data = {}
         
         # Add general session information
-        current_date = datetime.datetime.now().strftime("%Y/%m/%d %H:%M")
-        data['Date'] = current_date
-        data['PatientID'] = self.patient_id
-        data['Hand'] = self.hand_side.capitalize()
-        data['ModulationType'] = self.modulation_type
+        matlab_data['Date'] = datetime.datetime.now().strftime("%Y/%m/%d %H:%M")
+        matlab_data['PatientID'] = self.patient_id
+        matlab_data['Hand'] = self.hand_side.capitalize()
+        matlab_data['ModulationType'] = self.modulation_type
+        
         
         # Determine which nerve was stimulated
         nerve = "None"
@@ -860,36 +880,50 @@ class SensationApp(QWidget):
             nerve = "Median"
         elif self.stimulation_types["ulnar_nerve"]:
             nerve = "Ulnar"
-        data['Nerve'] = nerve
+        matlab_data['Nerve'] = nerve
         
         # Add stimulation parameters
-        data['InterphaseDistance_us'] = self.fixed_parameters['interphase']
+        matlab_data['InterphaseDistance_us'] = self.fixed_parameters['interphase']
         
         # Set parameters based on modulation type
         if self.modulation_type == "amplitude":
-            data['Current'] = np.array([])  # Empty array for modulated parameter
-            data['Frequency'] = self.fixed_parameters['frequency']
-            data['PulseWidth'] = self.fixed_parameters['pulse_width']
+            matlab_data['Current'] = np.array([])  # Empty array for modulated parameter
+            matlab_data['Frequency'] = self.fixed_parameters['frequency']
+            matlab_data['PulseWidth'] = self.fixed_parameters['pulse_width']
         elif self.modulation_type == "frequency":
-            data['Current'] = self.fixed_parameters['current']
-            data['Frequency'] = np.array([])  # Empty array for modulated parameter
-            data['PulseWidth'] = self.fixed_parameters['pulse_width']
+            matlab_data['Current'] = self.fixed_parameters['current']
+            matlab_data['Frequency'] = np.array([])  # Empty array for modulated parameter
+            matlab_data['PulseWidth'] = self.fixed_parameters['pulse_width']
         else:  # pulse_width
-            data['Current'] = self.fixed_parameters['current']
-            data['Frequency'] = self.fixed_parameters['frequency']
-            data['PulseWidth'] = np.array([])  # Empty array for modulated parameter
+            matlab_data['Current'] = self.fixed_parameters['current']
+            matlab_data['Frequency'] = self.fixed_parameters['frequency']
+            matlab_data['PulseWidth'] = np.array([])  # Empty array for modulated parameter
         
-        # Create a properly structured report dictionary for MATLAB
-        report_dict = {}
-        for report_num, report_data in self.reports.items():
+        matlab_data['MotorThreshold'] = self.fixed_parameters['motor_threshold']
+        matlab_data['SensoryThreshold'] = self.fixed_parameters['sensory_threshold']
+        
+        # Instead of using a list of structs, create a nested dictionary structure
+        report_struct = {}
+
+        # Sort the keys to ensure they're in order
+        sorted_keys = sorted(self.reports.keys(), key=lambda x: int(x))
+
+        # Process reports in order
+        for report_key in sorted_keys:
+            report_data = self.reports[report_key]
+            report_num = int(report_key)
+            
             # Convert sensation list to a cell array for MATLAB
             sensation_list = report_data['Sensation']
-            # Ensure each sensation is a valid string for MATLAB
             matlab_sensations = np.array([str(s) for s in sensation_list], dtype=object)
             
-            # Create a dict for this report that will convert properly to MATLAB struct
+            # Debug print
+            print(f"Processing report #{report_num} with sensations: {matlab_sensations}")
+            
+            # Create a dict for this report (will be a struct in MATLAB)
             report_entry = {
                 'Map': report_data['Map'],
+                'ModulatedParameter': report_data['ModulatedParameter'],
                 'Sensation': matlab_sensations,
                 'AdditionalDescription': report_data['AdditionalDescription'],
                 'Naturalness': report_data['Naturalness'],
@@ -897,23 +931,30 @@ class SensationApp(QWidget):
                 'UnderElectrodeSensation': report_data['UnderElectrodeSensation']
             }
             
-            # Add to the report dictionary with the number as key
-            report_dict[report_num] = report_entry
+            # Add to our nested structure with key "report_N"
+            report_struct[f'report_{report_num}'] = report_entry
+
+        # Store the report structure in the MATLAB data
+        matlab_data['report'] = report_struct
         
-        # Add the reports to the main data dictionary
-        data['Report'] = report_dict
+        # Debug: Print structure before saving
+        print(f"MATLAB data structure keys: {list(matlab_data.keys())}")
         
         # Save to MATLAB format
         try:
-            sio.savemat(filename, {'data': data}, long_field_names=True)
+            sio.savemat(filename, {'data': matlab_data}, 
+                    long_field_names=True, 
+                    do_compression=True)
+            
             QMessageBox.information(self, "Success", "Session data saved successfully!")
             QApplication.quit()
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Error saving session data: {str(e)}")
+            print(f"Detailed error: {e}")
 
     def save_data(self):
         # If no point or area has been selected
-        if self.click_position == (None, None):
+        if not isinstance(self.last_intersection_mask, np.ndarray) or self.last_intersection_mask.size == 0:
             from PyQt5.QtWidgets import QMessageBox
             QMessageBox.warning(self, "Warning", "Select an area on the image before saving.")
             return
@@ -927,6 +968,12 @@ class SensationApp(QWidget):
         # Add custom sensation if selected
         if self.other_checkbox.isChecked() and self.other_textfield.toPlainText().strip():
             selected_sensations.append(f"Other: {self.other_textfield.toPlainText().strip()}")
+
+        # Check if any sensation types were selected
+        if not selected_sensations:
+            from PyQt5.QtWidgets import QMessageBox
+            QMessageBox.warning(self, "Warning", "Please select at least one sensation type.")
+            return
         
         # Initialize reports list if it doesn't exist
         if not hasattr(self, 'reports'):
@@ -936,18 +983,12 @@ class SensationApp(QWidget):
         report_num = len(self.reports) + 1
         
         # Create a binary map of selected area
-        map_matrix = np.zeros((self.original_pixmap.height(), self.original_pixmap.width()), dtype=np.uint8)
-        if self.selected_area:
-            for x, y in self.selected_area:
-                # Convert normalized coordinates to image coordinates
-                img_x = int(x * self.original_pixmap.width())
-                img_y = int(y * self.original_pixmap.height())
-                if 0 <= img_x < self.original_pixmap.width() and 0 <= img_y < self.original_pixmap.height():
-                    map_matrix[img_y, img_x] = 1
-        
+        map_matrix = self.last_intersection_mask.copy()
+        self.last_intersection_mask = []
         # Create a report entry
         report = {
             'Map': map_matrix,
+            'ModulatedParameter': self.modulation_input.value(),
             'Sensation': selected_sensations,
             'AdditionalDescription': self.description_box.toPlainText(),
             'Naturalness': self.natural_slider.value(),
@@ -991,8 +1032,7 @@ class SensationApp(QWidget):
         Returns:
             bool: True if the area intersects with the hand mask, False otherwise
         """
-        import cv2
-        import numpy as np
+
         
         if self.hand_mask is None:
             # If no mask is loaded, accept all selections
@@ -1036,44 +1076,19 @@ class SensationApp(QWidget):
                 # No intersection with the hand
                 print("Selected area is completely outside the hand region")
                 from PyQt5.QtWidgets import QMessageBox
-                QMessageBox.warning(self, "Warning", "La selezione deve intersecare l'area della mano (area nera nella maschera).")
+                QMessageBox.warning(self, "Warning", "The selection must intersect with the hand area.")
                 return False
-                
+            
+            if isinstance(self.last_intersection_mask, np.ndarray) and self.last_intersection_mask.size > 0:
+                intersection = cv2.bitwise_or(self.last_intersection_mask, intersection)
+            self.last_intersection_mask = intersection.copy()
             # Get the coordinates of the current intersection
             coords = np.argwhere(intersection == 255)
             # Normalizza le coordinate rispetto alle dimensioni dell'immagine
             mask_height, mask_width = intersection.shape
             new_intersection_area = [(float(coord[1]) / mask_width, float(coord[0]) / mask_height) for coord in coords]
             
-            # If we already have a selected area, unite with the new one
-            if self.selected_area:
-                # We'll create a combined mask in image space
-                combined_mask = np.zeros((mask_height, mask_width), dtype=np.uint8)
-                
-                # Add existing points to the mask
-                for x, y in self.selected_area:
-                    # Convert normalized coordinates back to image coordinates
-                    img_x = int(x * mask_width)
-                    img_y = int(y * mask_height)
-                    if 0 <= img_x < mask_width and 0 <= img_y < mask_height:
-                        combined_mask[img_y, img_x] = 255
-                
-                # Add new points to the mask
-                for x, y in new_intersection_area:
-                    # Convert normalized coordinates back to image coordinates
-                    img_x = int(x * mask_width)
-                    img_y = int(y * mask_height)
-                    if 0 <= img_x < mask_width and 0 <= img_y < mask_height:
-                        combined_mask[img_y, img_x] = 255
-                
-                # Get all points in the combined mask
-                combined_coords = np.argwhere(combined_mask == 255)
-                
-                # Convert to normalized coordinates
-                self.selected_area = [(float(coord[1]) / mask_width, float(coord[0]) / mask_height) for coord in combined_coords]
-            else:
-                # First selection
-                self.selected_area = new_intersection_area
+            self.selected_area = new_intersection_area
             
             # Calculate the center of the selected area
             total_x = sum(point[0] for point in self.selected_area)

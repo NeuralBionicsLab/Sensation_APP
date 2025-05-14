@@ -3,7 +3,7 @@ from PyQt5.QtWidgets import (QApplication, QWidget, QRadioButton, QCheckBox, QLa
                            QVBoxLayout, QHBoxLayout, QPushButton, QGroupBox, QFormLayout,
                            QDoubleSpinBox, QFrame, QGridLayout, QButtonGroup, QMessageBox, QLineEdit)
 from PyQt5.QtCore import Qt, pyqtSignal
-from PyQt5.QtGui import QFont
+from PyQt5.QtGui import QFont, QIcon
 
 
 class SelectionScreen(QWidget):
@@ -12,9 +12,13 @@ class SelectionScreen(QWidget):
     
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Stimulation Parameters")
-        self.setGeometry(100, 100, 800, 600)
-        self.setMinimumSize(700, 550)
+        self.setWindowTitle("Sensory NBLab")
+    
+        # Set the application icon
+        app_icon = QIcon("Icon/Icon.png")
+        self.setWindowIcon(app_icon)
+        
+        self.setWindowState(Qt.WindowMaximized)  # Make window maximized
         
         # Set stylesheet for a nice UI
         self.setStyleSheet("""
@@ -123,40 +127,62 @@ class SelectionScreen(QWidget):
         param_group = QGroupBox("Fixed Parameters")
         self.param_layout = QFormLayout()
         
-        # Create parameter input fields
+        # For the current input - set 2 decimal places
         self.current_input = QDoubleSpinBox()
         self.current_input.setRange(0.1, 20.0)
         self.current_input.setSingleStep(0.1)
         self.current_input.setValue(1.0)
         self.current_input.setSuffix(" mA")
-        
+        self.current_input.setDecimals(2)  # Show 2 decimal places
+
+        # For frequency, pulse width and interphase - set 0 decimal places
         self.frequency_input = QDoubleSpinBox()
         self.frequency_input.setRange(1, 1000)
         self.frequency_input.setSingleStep(1)
         self.frequency_input.setValue(50)
         self.frequency_input.setSuffix(" Hz")
-        
+        self.frequency_input.setDecimals(0)  # Show 0 decimal places
+
         self.pulse_width_input = QDoubleSpinBox()
         self.pulse_width_input.setRange(1, 1000)
-        self.pulse_width_input.setSingleStep(10)
+        self.pulse_width_input.setSingleStep(1)
         self.pulse_width_input.setValue(200)
         self.pulse_width_input.setSuffix(" μs")
-        
+        self.pulse_width_input.setDecimals(0)  # Show 0 decimal places
+
         self.interphase_input = QDoubleSpinBox()
         self.interphase_input.setRange(0, 500)
-        self.interphase_input.setSingleStep(10)
+        self.interphase_input.setSingleStep(1)
         self.interphase_input.setValue(100)
         self.interphase_input.setSuffix(" μs")
+        self.interphase_input.setDecimals(0)  # Show 0 decimal places
+
+        # For threshold inputs - these need to change based on modulation type
+        self.sensory_threshold_input = QDoubleSpinBox()
+        self.sensory_threshold_input.setRange(0.1, 20.0)
+        self.sensory_threshold_input.setSingleStep(0.1)
+        self.sensory_threshold_input.setValue(1.0)
+        self.sensory_threshold_input.setSuffix(" mA")
+        self.sensory_threshold_input.setDecimals(2)  # Default for mA
+
+        self.motor_threshold_input = QDoubleSpinBox()
+        self.motor_threshold_input.setRange(0.1, 20.0)
+        self.motor_threshold_input.setSingleStep(0.1)
+        self.motor_threshold_input.setValue(1.5)
+        self.motor_threshold_input.setSuffix(" mA")
+        self.motor_threshold_input.setDecimals(2)  # Default for mA
         
         # Add parameters to layout
         self.param_layout.addRow("Current:", self.current_input)
         self.param_layout.addRow("Frequency:", self.frequency_input)
         self.param_layout.addRow("Pulse width:", self.pulse_width_input)
         self.param_layout.addRow("Interphase distance:", self.interphase_input)
+        self.param_layout.addRow("Sensory threshold:", self.sensory_threshold_input)
+        self.param_layout.addRow("Motor threshold:", self.motor_threshold_input)
         param_group.setLayout(self.param_layout)
         
         # Nerve stimulation type group
-        nerve_group = QGroupBox("Stimulation Type")
+        nerve_group = QGroupBox("Stimulation Nerve")
         nerve_layout = QVBoxLayout()
         
         self.median_nerve = QCheckBox("Median nerve")
@@ -200,6 +226,35 @@ class SelectionScreen(QWidget):
         
         # Pulse width is disabled if Pulse-width modulation is selected
         self.pulse_width_input.setEnabled(not self.pulse_width_radio.isChecked())
+        
+        # Update threshold suffixes based on modulation type
+        if self.amplitude_radio.isChecked():
+            self.sensory_threshold_input.setSuffix(" mA")
+            self.motor_threshold_input.setSuffix(" mA")
+            self.sensory_threshold_input.setRange(0.1, 20.0)
+            self.motor_threshold_input.setRange(0.1, 20.0)
+            self.motor_threshold_input.setSingleStep(0.10)
+            self.sensory_threshold_input.setSingleStep(0.10)
+            self.sensory_threshold_input.setDecimals(2)  # 2 decimals for current
+            self.motor_threshold_input.setDecimals(2)
+        elif self.pulse_width_radio.isChecked():
+            self.sensory_threshold_input.setSuffix(" μs")
+            self.motor_threshold_input.setSuffix(" μs")
+            self.sensory_threshold_input.setRange(1, 1000)
+            self.motor_threshold_input.setRange(1, 1000)
+            self.motor_threshold_input.setSingleStep(1)
+            self.sensory_threshold_input.setSingleStep(1)
+            self.sensory_threshold_input.setDecimals(0)  # 0 decimals for pulse width
+            self.motor_threshold_input.setDecimals(0)
+        else:  # frequency
+            self.sensory_threshold_input.setSuffix(" Hz")
+            self.motor_threshold_input.setSuffix(" Hz")
+            self.sensory_threshold_input.setRange(1, 1000)
+            self.motor_threshold_input.setRange(1, 1000)
+            self.motor_threshold_input.setSingleStep(1)
+            self.sensory_threshold_input.setSingleStep(1)
+            self.sensory_threshold_input.setDecimals(0)  # 0 decimals for frequency
+            self.motor_threshold_input.setDecimals(0)
     
     def onContinueClicked(self):
         """Collect all selected parameters and emit signal to main app"""
@@ -226,12 +281,23 @@ class SelectionScreen(QWidget):
             modulation_param_name = "Frequency (Hz)"
             # This will be entered in the main window
         
+        # Get threshold values
+        sensory_threshold = self.sensory_threshold_input.value()
+        motor_threshold = self.motor_threshold_input.value()
+        
+        # Check if motor threshold is greater than sensory threshold
+        if motor_threshold <= sensory_threshold:
+            QMessageBox.warning(self, "Error", "Motor threshold must be greater than sensory threshold.")
+            return
+        
         # Get fixed parameter values
         parameters = {
             "current": self.current_input.value() if not self.amplitude_radio.isChecked() else None,
             "frequency": self.frequency_input.value() if not self.frequency_radio.isChecked() else None,
             "pulse_width": self.pulse_width_input.value() if not self.pulse_width_radio.isChecked() else None,
-            "interphase": self.interphase_input.value()
+            "interphase": self.interphase_input.value(),
+            "sensory_threshold": sensory_threshold,
+            "motor_threshold": motor_threshold
         }
         
         # Get stimulation types
@@ -239,7 +305,7 @@ class SelectionScreen(QWidget):
             "median_nerve": self.median_nerve.isChecked(),
             "ulnar_nerve": self.ulnar_nerve.isChecked()
         }
-          # Check if at least one nerve is selected
+        # Check if at least one nerve is selected
         if not (stimulation["median_nerve"] or stimulation["ulnar_nerve"]):
             QMessageBox.warning(self, "Warning", "Please select at least one nerve stimulation type.")
             return
@@ -252,8 +318,6 @@ class SelectionScreen(QWidget):
             QMessageBox.warning(self, "Error", "Please enter a Device Name before proceeding.")
             return
         
-        # Rest of your existing code...
-        
         # Create data to pass to main interface
         data = {
             "hand": hand,
@@ -264,9 +328,10 @@ class SelectionScreen(QWidget):
             "parameters": parameters,
             "stimulation": stimulation,
             "patient_id": patient_id,
-            "device_name": device_name  # Add device name to the data dictionary
+            "device_name": device_name,
+            "sensory_threshold": sensory_threshold,
+            "motor_threshold": motor_threshold
         }
-
         
         # Emit signal with data
         self.selectionComplete.emit(data)
