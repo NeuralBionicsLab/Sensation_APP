@@ -1,0 +1,28 @@
+{
+    "python.defaultInterpreterPath": "${workspaceFolder}/.venv/Scripts/python.exe",
+    "python.linting.enabled": true,
+    "python.linting.pylintEnabled": true,
+    "python.linting.flake8Enabled": false,
+    "editor.formatOnSave": true,
+    "python.formatting.provider": "autopep8",
+    "python.formatting.autopep8Args": [
+        "--max-line-length",
+        "100",
+        "--aggressive"
+    ],
+    "editor.rulers": [
+        100
+    ],
+    "editor.indentSize": 4,
+    "files.exclude": {
+        "**/__pycache__": true,
+        "**/*.pyc": true
+    },
+    "python.analysis.extraPaths": [
+        "${workspaceFolder}"
+    ],
+    "[python]": {
+        "editor.defaultFormatter": "ms-python.python"
+    },
+    "python.envFile": "${workspaceFolder}/.env"
+}
